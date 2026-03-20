@@ -1,22 +1,4 @@
 #!/usr/bin/env python3
-"""
-fbx_find_replace.py
-
-Find and replace text in FBX node names, then save to a new file.
-
-Examples:
-    # Plain text replace
-    python fbx_find_replace.py input.fbx output.fbx Armature Skeleton
-
-    # Regex replace
-    python fbx_find_replace.py input.fbx output.fbx "^L_(.*)$" "Left_\\1" --regex
-
-    # Case-insensitive regex replace
-    python fbx_find_replace.py input.fbx output.fbx "mesh_(\\d+)" "geo_\\1" --regex --ignore-case
-
-    # Preview only
-    python fbx_find_replace.py input.fbx output.fbx "Bone" "Joint" --dry-run
-"""
 
 import argparse
 import os
@@ -169,17 +151,24 @@ def main():
 Find and replace text in FBX node names, then save to a new file.
 
 Examples:
+
     # Plain text replace
-    python fbx_find_replace.py input.fbx output.fbx Armature Skeleton
+    fbx_find_replace input.fbx output.fbx Armature Skeleton
 
     # Regex replace
-    python fbx_find_replace.py input.fbx output.fbx "^L_(.*)$" "Left_\\1" --regex
+    fbx_find_replace input.fbx output.fbx "^L_(.*)$" "Left_\\1" --regex
 
     # Case-insensitive regex replace
-    python fbx_find_replace.py input.fbx output.fbx "mesh_(\\d+)" "geo_\\1" --regex --ignore-case
+    fbx_find_replace input.fbx output.fbx "mesh_(\\d+)" "geo_\\1" --regex --ignore-case
+
+    # Remove first namespace
+    fbx_find_replace input.fbx output.fbx "^[^:]*:" "" --regex
+
+    # Remove all namespaces
+    fbx_find_replace input.fbx output.fbx "^.*:" "" --regex
 
     # Preview only
-    python fbx_find_replace.py input.fbx output.fbx "Bone" "Joint" --dry-run
+    fbx_find_replace input.fbx output.fbx "Bone" "Joint" --dry-run
 """,
         formatter_class=argparse.RawTextHelpFormatter,
     )
