@@ -1,8 +1,14 @@
-# fbx_find_replace
+# FBX Find & Replace
 
 Find and replace text in FBX node names, then save to a new file.
 
-Examples:
+## Requirements:
+
+Install Autodesk FBX SDK Python binding:
+
+https://aps.autodesk.com/developer/overview/fbx-sdk
+
+## Examples:
 
     # Plain text replace
     fbx_find_replace input.fbx output.fbx Armature Skeleton
