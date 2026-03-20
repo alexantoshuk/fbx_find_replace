@@ -2,8 +2,10 @@
 
 Find and replace text in FBX node names, then save to a new file.
 
-Examples: # Plain text replace
-python fbx_find_replace.py input.fbx output.fbx Armature Skeleton
+Examples:
+
+    # Plain text replace
+    python fbx_find_replace.py input.fbx output.fbx Armature Skeleton
 
     # Regex replace
     python fbx_find_replace.py input.fbx output.fbx "^L_(.*)$" "Left_\\1" --regex
