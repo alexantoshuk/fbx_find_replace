@@ -3,7 +3,9 @@
 import argparse
 import os
 import re
+import shutil
 import sys
+import tempfile
 
 import fbx
 
@@ -25,13 +27,16 @@ def create_sdk_objects():
 
 
 def load_scene(manager, scene, filename):
+    FBX_BINARY_MAGIC = b"Kaydara FBX Binary  \x00\x1a\x00"
+    with open(filename, "rb") as f:
+        is_ascii = f.read(len(FBX_BINARY_MAGIC)) != FBX_BINARY_MAGIC
+
     importer = fbx.FbxImporter.Create(manager, "")
     try:
         if not importer.Initialize(filename, -1, manager.GetIOSettings()):
             raise RuntimeError(
                 f"FBX importer init failed: {importer.GetStatus().GetErrorString()}"
             )
-
         if not importer.Import(scene):
             raise RuntimeError(
                 f"FBX import failed: {importer.GetStatus().GetErrorString()}"
@@ -39,21 +44,51 @@ def load_scene(manager, scene, filename):
     finally:
         importer.Destroy()
 
+    return is_ascii
 
-def save_scene(manager, scene, filename):
-    exporter = fbx.FbxExporter.Create(manager, "")
+
+def save_scene(manager, scene, filename, is_ascii=False):
+    out_dir = os.path.dirname(os.path.abspath(filename))
+    if not os.path.isdir(out_dir):
+        raise RuntimeError(f"Output directory does not exist: {out_dir}")
+
+    if is_ascii:
+        registry = manager.GetIOPluginRegistry()
+        format_index = -1
+        for i in range(registry.GetWriterFormatCount()):
+            if (
+                registry.WriterIsFBX(i)
+                and "ascii" in registry.GetWriterFormatDescription(i).lower()
+            ):
+                format_index = i
+                break
+    else:
+        format_index = -1
+
+    # FBX SDK's C++ layer cannot write to paths with spaces (e.g. network
+    # drives like "P:\Shared drives\..."). Write to a local temp file first,
+    # then move it to the real destination with Python's shutil.
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".fbx")
+    os.close(tmp_fd)
     try:
-        if not exporter.Initialize(filename, -1, manager.GetIOSettings()):
-            raise RuntimeError(
-                f"FBX exporter init failed: {exporter.GetStatus().GetErrorString()}"
-            )
+        exporter = fbx.FbxExporter.Create(manager, "")
+        try:
+            if not exporter.Initialize(tmp_path, format_index, manager.GetIOSettings()):
+                raise RuntimeError(
+                    f"FBX exporter init failed: {exporter.GetStatus().GetErrorString()}"
+                )
+            if not exporter.Export(scene):
+                raise RuntimeError(
+                    f"FBX export failed: {exporter.GetStatus().GetErrorString()}"
+                )
+        finally:
+            exporter.Destroy()
 
-        if not exporter.Export(scene):
-            raise RuntimeError(
-                f"FBX export failed: {exporter.GetStatus().GetErrorString()}"
-            )
+        shutil.move(tmp_path, filename)
+        tmp_path = None
     finally:
-        exporter.Destroy()
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 def plain_replace(name, find_text, replace_text, ignore_case=False):
@@ -92,56 +127,31 @@ def regex_replace(name, pattern, replace_text, ignore_case=False):
     return new_name, count
 
 
-def process_node(
-    node,
-    find_text,
-    replace_text,
-    ignore_case=False,
-    use_regex=False,
-    changes=None,
-):
-    if changes is None:
-        changes = []
-
-    old_name = node.GetName()
-
+def rename_object(obj, find_text, replace_text, ignore_case, use_regex, changes):
+    old_name = obj.GetName()
     if use_regex:
         new_name, replace_count = regex_replace(
-            old_name,
-            find_text,
-            replace_text,
-            ignore_case=ignore_case,
+            old_name, find_text, replace_text, ignore_case=ignore_case
         )
     else:
         new_name, replace_count = plain_replace(
-            old_name,
-            find_text,
-            replace_text,
-            ignore_case=ignore_case,
+            old_name, find_text, replace_text, ignore_case=ignore_case
         )
-
     if new_name != old_name:
-        node.SetName(new_name)
+        obj.SetName(new_name)
         changes.append(
-            {
-                "old_name": old_name,
-                "new_name": new_name,
-                "replacements": replace_count,
-            }
+            {"old_name": old_name, "new_name": new_name, "replacements": replace_count}
         )
 
-    child_count = node.GetChildCount()
-    for i in range(child_count):
-        child = node.GetChild(i)
-        process_node(
-            child,
-            find_text,
-            replace_text,
-            ignore_case=ignore_case,
-            use_regex=use_regex,
-            changes=changes,
-        )
 
+def process_all_objects(
+    scene, find_text, replace_text, ignore_case=False, use_regex=False
+):
+    """Rename every object in the scene regardless of type."""
+    changes = []
+    for i in range(scene.GetSrcObjectCount()):
+        obj = scene.GetSrcObject(i)
+        rename_object(obj, find_text, replace_text, ignore_case, use_regex, changes)
     return changes
 
 
@@ -212,26 +222,21 @@ Examples:
     manager = None
     try:
         manager, scene = create_sdk_objects()
-        load_scene(manager, scene, args.input)
+        is_ascii = load_scene(manager, scene, args.input)
+        print(f"Source format: {'ASCII' if is_ascii else 'Binary'} FBX")
 
-        root = scene.GetRootNode()
-        if root is None:
-            print("Error: scene has no root node", file=sys.stderr)
-            return 1
-
-        changes = process_node(
-            root,
+        changes = process_all_objects(
+            scene,
             args.find,
             args.replace,
             ignore_case=args.ignore_case,
             use_regex=args.regex,
-            changes=[],
         )
 
         if changes:
             total_replacements = sum(item["replacements"] for item in changes)
             print(
-                f"Changed {len(changes)} node name(s), "
+                f"Changed {len(changes)} name(s), "
                 f"{total_replacements} replacement(s) total:"
             )
             for item in changes:
@@ -240,10 +245,10 @@ Examples:
                     f"({item['replacements']} replacement(s))"
                 )
         else:
-            print("No node names matched.")
+            print("No names matched.")
 
         if not args.dry_run:
-            save_scene(manager, scene, args.output)
+            save_scene(manager, scene, args.output, is_ascii)
             print(f"Saved: {args.output}")
         else:
             print("Dry run only; nothing saved.")
