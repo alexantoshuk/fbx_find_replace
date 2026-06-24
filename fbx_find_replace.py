@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import glob
 import os
 import re
 import shutil
@@ -49,8 +50,7 @@ def load_scene(manager, scene, filename):
 
 def save_scene(manager, scene, filename, is_ascii=False):
     out_dir = os.path.dirname(os.path.abspath(filename))
-    if not os.path.isdir(out_dir):
-        raise RuntimeError(f"Output directory does not exist: {out_dir}")
+    os.makedirs(out_dir, exist_ok=True)
 
     if is_ascii:
         registry = manager.GetIOPluginRegistry()
@@ -155,74 +155,84 @@ def process_all_objects(
     return changes
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="""
-Find and replace text in FBX node names, then save to a new file.
+def glob_to_capture_regex(pattern):
+    """Translate a glob pattern into a regex whose groups capture each
+    wildcard's matched text. Returns (compiled_regex, wildcard_count)."""
+    pattern = os.path.normpath(pattern)
+    out = []
+    wildcard_count = 0
+    i = 0
+    n = len(pattern)
+    while i < n:
+        c = pattern[i]
+        if c == "*":
+            out.append("(.*)")
+            wildcard_count += 1
+            i += 1
+        elif c == "?":
+            out.append("(.)")
+            wildcard_count += 1
+            i += 1
+        elif c == "[":
+            j = i + 1
+            if j < n and pattern[j] == "!":
+                j += 1
+            if j < n and pattern[j] == "]":
+                j += 1
+            while j < n and pattern[j] != "]":
+                j += 1
+            if j >= n:
+                out.append(re.escape(c))
+                i += 1
+            else:
+                stuff = pattern[i + 1 : j]
+                if stuff.startswith("!"):
+                    stuff = "^" + stuff[1:]
+                out.append("([" + stuff + "])")
+                wildcard_count += 1
+                i = j + 1
+        else:
+            out.append(re.escape(c))
+            i += 1
+    regex = re.compile("^" + "".join(out) + "$", re.IGNORECASE)
+    return regex, wildcard_count
 
-Examples:
 
-    # Plain text replace
-    fbx_find_replace input.fbx output.fbx Armature Skeleton
+def substitute_output_wildcards(output_pattern, captures):
+    """Replace each '*' in the output pattern with the next captured wildcard
+    text from the matched input path, in order."""
+    result = []
+    idx = 0
+    for c in output_pattern:
+        if c == "*":
+            if idx < len(captures):
+                result.append(captures[idx])
+                idx += 1
+            else:
+                result.append("*")
+        else:
+            result.append(c)
+    return "".join(result)
 
-    # Regex replace
-    fbx_find_replace input.fbx output.fbx "^L_(.*)$" "Left_\\1" --regex
 
-    # Case-insensitive regex replace
-    fbx_find_replace input.fbx output.fbx "mesh_(\\d+)" "geo_\\1" --regex --ignore-case
+def resolve_output_path(input_path, input_pattern, output_pattern):
+    """Compute the output path for a single matched input file."""
+    if glob.has_magic(output_pattern):
+        regex, _ = glob_to_capture_regex(input_pattern)
+        match = regex.match(os.path.normpath(input_path))
+        captures = list(match.groups()) if match else []
+        return substitute_output_wildcards(output_pattern, captures)
+    # No wildcard in output: treat it as a target directory.
+    return os.path.join(output_pattern, os.path.basename(input_path))
 
-    # Remove first namespace
-    fbx_find_replace input.fbx output.fbx "^[^:]*:" "" --regex
 
-    # Remove all namespaces
-    fbx_find_replace input.fbx output.fbx "^.*:" "" --regex
-
-    # Preview only
-    fbx_find_replace input.fbx output.fbx "Bone" "Joint" --dry-run
-""",
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-    parser.add_argument("input", help="Input FBX file")
-    parser.add_argument("output", help="Output FBX file")
-    parser.add_argument("find", help="Text or regex pattern to find")
-    parser.add_argument("replace", help="Replacement text")
-    parser.add_argument(
-        "--ignore-case",
-        action="store_true",
-        help="Case-insensitive replacement",
-    )
-    parser.add_argument(
-        "--regex",
-        action="store_true",
-        help="Treat 'find' as a regular expression",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Do not save; only print changes",
-    )
-
-    args = parser.parse_args()
-
-    if not os.path.isfile(args.input):
-        print(f"Error: input file does not exist: {args.input}", file=sys.stderr)
-        return 1
-
-    if args.find == "":
-        print("Error: find text/pattern must not be empty", file=sys.stderr)
-        return 1
-
-    if args.regex:
-        try:
-            re.compile(args.find, re.IGNORECASE if args.ignore_case else 0)
-        except re.error as exc:
-            print(f"Error: invalid regex pattern: {exc}", file=sys.stderr)
-            return 1
-
+def process_file(input_path, output_path, args):
+    """Run find/replace on a single FBX file. Returns True on success."""
     manager = None
     try:
         manager, scene = create_sdk_objects()
-        is_ascii = load_scene(manager, scene, args.input)
+        is_ascii = load_scene(manager, scene, input_path)
+        print(f"\n=== {input_path} -> {output_path} ===")
         print(f"Source format: {'ASCII' if is_ascii else 'Binary'} FBX")
 
         changes = process_all_objects(
@@ -248,20 +258,135 @@ Examples:
             print("No names matched.")
 
         if not args.dry_run:
-            save_scene(manager, scene, args.output, is_ascii)
-            print(f"Saved: {args.output}")
+            save_scene(manager, scene, output_path, is_ascii)
+            print(f"Saved: {output_path}")
         else:
             print("Dry run only; nothing saved.")
 
-        return 0
+        return True
 
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 1
+        print(f"Error processing {input_path}: {exc}", file=sys.stderr)
+        return False
 
     finally:
         if manager is not None:
             manager.Destroy()
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="""
+Find and replace text in FBX node names, then save to a new file.
+
+Examples:
+
+    # Plain text replace
+    fbx_find_replace input.fbx output.fbx Armature Skeleton
+
+    # Regex replace
+    fbx_find_replace input.fbx output.fbx "^L_(.*)$" "Left_\\1" --regex
+
+    # Case-insensitive regex replace
+    fbx_find_replace input.fbx output.fbx "mesh_(\\d+)" "geo_\\1" --regex --ignore-case
+
+    # Remove first namespace (omit replacement to delete the match)
+    fbx_find_replace input.fbx output.fbx "^[^:]*:" --regex
+
+    # Remove all namespaces
+    fbx_find_replace input.fbx output.fbx "^.*:" --regex
+
+    # Preview only
+    fbx_find_replace input.fbx output.fbx "Bone" "Joint" --dry-run
+
+    # Batch: process every .fbx, writing renamed copies (the output '*'
+    # is replaced by the text matched by the input '*')
+    fbx_find_replace "in/*.fbx" "out/*.fbx" Armature Skeleton
+
+    # Batch into a directory (output has no wildcard, original names kept)
+    fbx_find_replace "in/*.fbx" out_dir Armature Skeleton
+""",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument(
+        "input",
+        help="Input FBX file, or a glob pattern (e.g. \"in/*.fbx\") for batch mode",
+    )
+    parser.add_argument(
+        "output",
+        help=(
+            "Output FBX file. In batch mode, use a pattern with '*' (replaced by "
+            "each input's matched text) or a target directory"
+        ),
+    )
+    parser.add_argument("find", help="Text or regex pattern to find")
+    parser.add_argument(
+        "replace",
+        nargs="?",
+        default="",
+        help="Replacement text (defaults to an empty string, i.e. delete the match)",
+    )
+    parser.add_argument(
+        "--ignore-case",
+        action="store_true",
+        help="Case-insensitive replacement",
+    )
+    parser.add_argument(
+        "--regex",
+        action="store_true",
+        help="Treat 'find' as a regular expression",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Do not save; only print changes",
+    )
+
+    args = parser.parse_args()
+
+    if args.find == "":
+        print("Error: find text/pattern must not be empty", file=sys.stderr)
+        return 1
+
+    if args.regex:
+        try:
+            re.compile(args.find, re.IGNORECASE if args.ignore_case else 0)
+        except re.error as exc:
+            print(f"Error: invalid regex pattern: {exc}", file=sys.stderr)
+            return 1
+
+    if glob.has_magic(args.input):
+        input_files = sorted(f for f in glob.glob(args.input) if os.path.isfile(f))
+        if not input_files:
+            print(
+                f"Error: no files match input pattern: {args.input}", file=sys.stderr
+            )
+            return 1
+    else:
+        if not os.path.isfile(args.input):
+            print(f"Error: input file does not exist: {args.input}", file=sys.stderr)
+            return 1
+        input_files = [args.input]
+
+    is_batch = glob.has_magic(args.input) or len(input_files) > 1
+    if is_batch:
+        print(f"Batch mode: {len(input_files)} file(s) matched.")
+
+    failures = 0
+    for input_path in input_files:
+        if is_batch:
+            output_path = resolve_output_path(input_path, args.input, args.output)
+        else:
+            output_path = args.output
+        if not process_file(input_path, output_path, args):
+            failures += 1
+
+    if is_batch:
+        print(
+            f"\nDone: {len(input_files) - failures} succeeded, {failures} failed."
+        )
+
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
