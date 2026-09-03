@@ -7,7 +7,6 @@ import re
 import shutil
 import sys
 import tempfile
-
 import fbx
 
 
@@ -275,6 +274,7 @@ def process_file(input_path, output_path, args):
 
 
 def main():
+    # print( sys.argv)
     if not sys.argv[1:]:
         gui()
         return 0
@@ -398,7 +398,6 @@ Examples:
 def gui():
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox
-    import os
 
     class FileFolderDialog:
         def __init__(self, root):
@@ -598,6 +597,7 @@ def gui():
 
         def on_cancel(self):
             """Cancel button handler"""
+            self.root.destroy()
             return
 
         def get_values(self):
