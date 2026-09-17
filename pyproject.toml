@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fbx-find-replace"
+version = "1.1.0"
+description = "Find and replace text in FBX node names"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "Alexa" }]
+
+[project.scripts]
+fbx_find_replace = "fbx_find_replace:main"
+fbx_find_replace_gui = "fbx_find_replace_gui:main"
+
+[project.urls]
+Homepage = "https://github.com/alexandrius/fbx_find_replace"
+
+[tool.setuptools]
+py-modules = ["fbx_find_replace", "fbx_find_replace_gui"]

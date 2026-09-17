@@ -2,13 +2,53 @@
 
 Find and replace text in FBX node names, then save to a new file.
 
-## Requirements:
+Works on **Windows**, **Linux**, and **macOS** (Python 3.10+).
 
-Install Autodesk FBX SDK Python binding:
+## Requirements
+
+Install Autodesk FBX SDK Python binding for your OS and Python version:
 
 https://aps.autodesk.com/developer/overview/fbx-sdk
 
-## Examples:
+Download the **FBX Python SDK** package for your platform, then install the
+included wheel, for example:
+
+```bash
+# Linux (example; use the wheel name from your download)
+pip install ./fbx-*-cp310-*-manylinux*.whl
+
+# Windows (example)
+pip install .\fbx-*-cp310-*-win_amd64.whl
+```
+
+Verify:
+
+```bash
+python -c "import fbx; print('ok')"
+```
+
+On Linux you may also need system libraries used by the SDK:
+
+```bash
+sudo apt install libxml2 zlib1g   # Debian/Ubuntu
+```
+
+## Install this project
+
+From the repo root:
+
+```bash
+pip install .
+```
+
+Or run the scripts directly without installing:
+
+```bash
+python fbx_find_replace.py ...
+python fbx_find_replace_gui.py
+```
+
+## Examples
 
     # Plain text replace
     fbx_find_replace input.fbx output.fbx Armature Skeleton
@@ -54,3 +94,50 @@ Examples:
 
     # Preview a batch run without saving
     fbx_find_replace "in/*.fbx" "out/*.fbx" "Bone" "Joint" --dry-run
+
+## GUI
+
+Run without arguments (or use the `fbx_find_replace_gui` entry point):
+
+```bash
+fbx_find_replace_gui
+# or
+python fbx_find_replace_gui.py
+```
+
+Requires Tk (`python3-tk` on Debian/Ubuntu).
+
+## Portable binary (like a Windows .exe)
+
+PyInstaller cannot cross-compile: build the Linux binary **on Linux** (or WSL),
+and the Windows `.exe` on Windows. The FBX SDK for that OS must already be
+importable (`python -c "import fbx"`).
+
+```bash
+pip install pyinstaller
+python build_portable.py          # CLI + GUI → dist/
+python build_portable.py --cli    # only fbx_find_replace
+python build_portable.py --gui    # only fbx_find_replace_gui
+```
+
+| Platform | Output |
+|----------|--------|
+| Windows  | `dist/fbx_find_replace.exe`, `dist/fbx_find_replace_gui.exe` |
+| Linux    | `dist/fbx_find_replace`, `dist/fbx_find_replace_gui` |
+
+On Linux, make it executable and run:
+
+```bash
+chmod +x dist/fbx_find_replace
+./dist/fbx_find_replace input.fbx output.fbx Armature Skeleton
+```
+
+The binary is self-contained (Python + script + FBX extension), but may still
+need common system libs such as `libxml2` / `zlib`.
+
+**Windows alternative (py2exe, CLI only):**
+
+```bash
+pip install py2exe
+python build_windows.py
+```

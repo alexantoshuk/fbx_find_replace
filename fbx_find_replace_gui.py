@@ -1,7 +1,7 @@
 """
-Make exe
-c:/Python310/python.exe -m pip install pyinstaller
-c:/Python310/python.exe -m PyInstaller --onefile --console --name fbx_find_replace_gui fbx_find_replace_gui.py
+GUI entry point. Build a portable binary with:
+
+  python build_portable.py --gui
 """
 import sys
 import fbx_find_replace
@@ -237,11 +237,11 @@ def gui():
 
 
 def main():
-    # print( sys.argv)
     if not sys.argv[1:]:
         gui()
         return 0
-    fbx_find_replace.run()
+    return fbx_find_replace.run()
+
 
 if __name__ == "__main__":
     sys.exit(main())

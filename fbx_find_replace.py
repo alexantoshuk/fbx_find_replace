@@ -154,6 +154,11 @@ def process_all_objects(
     return changes
 
 
+def _path_regex_flags():
+    # Windows paths are case-insensitive; Linux/macOS typically are not.
+    return re.IGNORECASE if os.name == "nt" else 0
+
+
 def glob_to_capture_regex(pattern):
     """Translate a glob pattern into a regex whose groups capture each
     wildcard's matched text. Returns (compiled_regex, wildcard_count)."""
@@ -193,8 +198,22 @@ def glob_to_capture_regex(pattern):
         else:
             out.append(re.escape(c))
             i += 1
-    regex = re.compile("^" + "".join(out) + "$", re.IGNORECASE)
+    body = "".join(out)
+    # Keep "*.fbx" matching "*.FBX" on case-sensitive filesystems.
+    if re.search(r"\\\.fbx$", body, re.IGNORECASE):
+        body = re.sub(r"\\\.fbx$", r"\\.[fF][bB][xX]", body, flags=re.IGNORECASE)
+    regex = re.compile("^" + body + "$", _path_regex_flags())
     return regex, wildcard_count
+
+
+def expand_input_glob(pattern):
+    """Expand an input glob, matching .fbx case-insensitively on Linux/macOS."""
+    matches = {f for f in glob.glob(pattern) if os.path.isfile(f)}
+    # On case-sensitive filesystems, "*.fbx" does not match "*.FBX".
+    if os.name != "nt" and pattern.lower().endswith(".fbx"):
+        alt = pattern[:-4] + ".[fF][bB][xX]"
+        matches.update(f for f in glob.glob(alt) if os.path.isfile(f))
+    return sorted(matches)
 
 
 def substitute_output_wildcards(output_pattern, captures):
@@ -274,7 +293,8 @@ def process_file(input_path, output_path, args):
 
 
 def main():
-    run()
+    return run()
+
 
 def run():
     parser = argparse.ArgumentParser(
@@ -358,7 +378,7 @@ Examples:
             return 1
 
     if glob.has_magic(args.input):
-        input_files = sorted(f for f in glob.glob(args.input) if os.path.isfile(f))
+        input_files = expand_input_glob(args.input)
         if not input_files:
             print(
                 f"Error: no files match input pattern: {args.input}", file=sys.stderr

@@ -1,10 +1,17 @@
 """
-c:/Python310/python.exe setup.py
+Windows-only: build a standalone console exe with py2exe.
+
+  py -3.10 -m pip install py2exe
+  py -3.10 build_windows.py
 """
 
 import glob
 import os
 import site
+import sys
+
+if sys.platform != "win32":
+    sys.exit("build_windows.py is only supported on Windows (uses py2exe).")
 
 import py2exe
 
@@ -12,13 +19,26 @@ site_packages = site.getsitepackages()[0]
 
 data_files = []
 
-# Try to collect FBX binary module / DLLs if they exist in site-packages
-fbx_candidates = ["c:/Python310/DLLs/libffi-7.dll"]
+# Collect FBX binary module / DLLs if they exist in site-packages
+fbx_candidates = []
+for dll_dir in site.getsitepackages():
+    ffi = os.path.join(dll_dir, "libffi-7.dll")
+    if os.path.isfile(ffi):
+        fbx_candidates.append(ffi)
+    # Some Python installs keep DLLs next to the interpreter
+    dlls = os.path.join(os.path.dirname(sys.executable), "DLLs", "libffi-7.dll")
+    if os.path.isfile(dlls):
+        fbx_candidates.append(dlls)
+
 for pattern in [
     os.path.join(site_packages, "fbx*.pyd"),
     os.path.join(site_packages, "fbx*.dll"),
 ]:
     fbx_candidates.extend(glob.glob(pattern))
+
+# De-dupe while preserving order
+seen = set()
+fbx_candidates = [p for p in fbx_candidates if not (p in seen or seen.add(p))]
 
 if fbx_candidates:
     data_files.append((".", fbx_candidates))
