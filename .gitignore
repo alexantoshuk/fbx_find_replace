@@ -5,6 +5,9 @@ __pycache__/
 
 *.fbx
 *.zip
+# Local / CI staging for proprietary Autodesk FBX SDK packages (do not commit)
+sdk/
+
 # C extensions
 *.so
 

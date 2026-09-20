@@ -154,9 +154,22 @@ def process_all_objects(
     return changes
 
 
+def _path_case_insensitive():
+    """True when the filesystem treats paths case-insensitively.
+
+    Windows: always. macOS: default APFS/HFS+ volumes are case-insensitive.
+    Linux: typically case-sensitive (and rare case-insensitive Mac volumes are
+    still fine with IGNORECASE matching).
+    """
+    if os.name == "nt":
+        return True
+    if sys.platform == "darwin":
+        return True
+    return False
+
+
 def _path_regex_flags():
-    # Windows paths are case-insensitive; Linux/macOS typically are not.
-    return re.IGNORECASE if os.name == "nt" else 0
+    return re.IGNORECASE if _path_case_insensitive() else 0
 
 
 def glob_to_capture_regex(pattern):
@@ -207,10 +220,10 @@ def glob_to_capture_regex(pattern):
 
 
 def expand_input_glob(pattern):
-    """Expand an input glob, matching .fbx case-insensitively on Linux/macOS."""
+    """Expand an input glob, matching .fbx case-insensitively when needed."""
     matches = {f for f in glob.glob(pattern) if os.path.isfile(f)}
-    # On case-sensitive filesystems, "*.fbx" does not match "*.FBX".
-    if os.name != "nt" and pattern.lower().endswith(".fbx"):
+    # On case-sensitive filesystems (typical Linux), "*.fbx" misses "*.FBX".
+    if not _path_case_insensitive() and pattern.lower().endswith(".fbx"):
         alt = pattern[:-4] + ".[fF][bB][xX]"
         matches.update(f for f in glob.glob(alt) if os.path.isfile(f))
     return sorted(matches)

@@ -1,0 +1,104 @@
+# Build a portable macOS CLI binary without a local Mac (GitHub-hosted runner).
+#
+# Setup:
+# 1. Download Autodesk "FBX Python SDK" for macOS.
+# 2. Upload it to the private repo release:
+#      gh release create fbx-sdk ./FBX*_macos* --repo alexantoshuk/mac_fbx_sdk \
+#        --title "FBX Python SDK macOS" --notes "CI only"
+# 3. Ensure secret MAC_FBX_SDK_TOKEN (PAT with read access to mac_fbx_sdk) exists
+#    on alexantoshuk/fbx_find_replace.
+# 4. Actions → "Build macOS portable" → Run workflow
+# 5. Download artifact fbx_find_replace-macos-arm64
+
+name: Build macOS portable
+
+on:
+  workflow_dispatch:
+    inputs:
+      intel:
+        description: "Also build Intel (x86_64 / macos-13) binary"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            arch: arm64
+          - os: macos-13
+            arch: x86_64
+            optional: true
+    runs-on: ${{ matrix.os }}
+    if: ${{ matrix.optional != true || inputs.intel == true }}
+    steps:
+      - name: Require access token for private SDK repo
+        env:
+          MAC_FBX_SDK_TOKEN: ${{ secrets.MAC_FBX_SDK_TOKEN }}
+        run: |
+          if [ -z "$MAC_FBX_SDK_TOKEN" ]; then
+            echo "::error::Missing secret MAC_FBX_SDK_TOKEN (PAT that can read alexantoshuk/mac_fbx_sdk)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Download FBX macOS SDK from alexantoshuk/mac_fbx_sdk
+        env:
+          GH_TOKEN: ${{ secrets.MAC_FBX_SDK_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p sdk
+          gh release download fbx-sdk \
+            --repo alexantoshuk/mac_fbx_sdk \
+            --dir sdk \
+            --pattern '*'
+          ls -la sdk
+          if ! find sdk -type f | grep -q .; then
+            echo "::error::Release fbx-sdk in alexantoshuk/mac_fbx_sdk has no assets. Upload the Autodesk macOS SDK package first."
+            exit 1
+          fi
+
+      - name: Locate wheel / detect Python version
+        id: fbx
+        run: |
+          set -euo pipefail
+          whl=$(bash ci/install_fbx_macos.sh sdk --find-only | tail -n 1)
+          echo "wheel=$whl" >> "$GITHUB_OUTPUT"
+          base=$(basename "$whl")
+          if [[ "$base" =~ cp([0-9])([0-9]+) ]]; then
+            echo "python_version=${BASH_REMATCH[1]}.${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "python_version=3.11" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Detected $base"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ steps.fbx.outputs.python_version }}
+
+      - name: Install FBX wheel + PyInstaller
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install "${{ steps.fbx.outputs.wheel }}" pyinstaller
+          python -c "import fbx; print('fbx ok', fbx.__file__)"
+
+      - name: Build portable CLI
+        run: |
+          set -euo pipefail
+          python build_portable.py --cli
+          chmod +x dist/fbx_find_replace
+          file dist/fbx_find_replace
+          ./dist/fbx_find_replace --help | head -n 8
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fbx_find_replace-macos-${{ matrix.arch }}
+          path: dist/fbx_find_replace
+          if-no-files-found: error

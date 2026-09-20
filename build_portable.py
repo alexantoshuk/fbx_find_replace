@@ -7,13 +7,13 @@ Prerequisites:
   # plus Autodesk FBX Python SDK so `import fbx` works
 
 Usage:
-  python build_portable.py          # CLI + GUI
-  python build_portable.py --cli    # CLI only
-  python build_portable.py --gui    # GUI only
+  python build_portable.py          # CLI (+ GUI if tkinter is available)
+  python build_portable.py --cli    # CLI only (recommended on macOS)
+  python build_portable.py --gui    # GUI only (requires tkinter)
 
 Outputs land in dist/:
   dist/fbx_find_replace[.exe]
-  dist/fbx_find_replace_gui[.exe]
+  dist/fbx_find_replace_gui[.exe]   # optional
 """
 
 from __future__ import annotations
@@ -38,10 +38,19 @@ def _site_dirs():
             dirs.append(user)
     except Exception:
         pass
-    # venv
-    if sys.prefix not in dirs:
-        dirs.append(os.path.join(sys.prefix, "Lib", "site-packages"))
-        dirs.append(os.path.join(sys.prefix, "lib", f"python{sys.version_info.major}.{sys.version_info.minor}", "site-packages"))
+    # venv / virtualenv layouts (Windows + Unix)
+    candidates = [
+        os.path.join(sys.prefix, "Lib", "site-packages"),
+        os.path.join(
+            sys.prefix,
+            "lib",
+            f"python{sys.version_info.major}.{sys.version_info.minor}",
+            "site-packages",
+        ),
+    ]
+    for path in candidates:
+        if path not in dirs:
+            dirs.append(path)
     return [d for d in dirs if d and os.path.isdir(d)]
 
 
@@ -51,7 +60,8 @@ def collect_fbx_artifacts():
     if spec is None or not spec.origin:
         sys.exit(
             "Error: cannot import 'fbx'. Install Autodesk FBX Python SDK first,\n"
-            "then re-run this script with the same Python interpreter."
+            "then re-run this script with the same Python interpreter.\n"
+            "On macOS use the macOS FBX Python SDK wheel (macosx_*), not Linux/Windows."
         )
 
     binaries = []
@@ -71,7 +81,12 @@ def collect_fbx_artifacts():
         if entry not in datas and os.path.isfile(path):
             datas.append(entry)
 
-    if origin.endswith((".pyd", ".so", ".dll")) or ".so." in os.path.basename(origin):
+    base = os.path.basename(origin)
+    if (
+        origin.endswith((".pyd", ".so", ".dll", ".dylib"))
+        or ".so." in base
+        or ".dylib." in base
+    ):
         add_binary(origin)
     elif origin.endswith(".py"):
         add_data(origin)
@@ -81,6 +96,8 @@ def collect_fbx_artifacts():
         "fbx*.dll",
         "fbx*.so",
         "fbx*.so.*",
+        "fbx*.dylib",
+        "fbx*.dylib.*",
         "libfbxsdk*",
         "FbxCommon.py",
         "fbx.py",
@@ -116,6 +133,10 @@ def build(name: str, script: str, binaries, datas) -> None:
         "--hidden-import",
         "fbx",
     ]
+    if sys.platform == "darwin":
+        # Helps Gatekeeper / identification; no effect on other platforms.
+        args.extend(["--osx-bundle-identifier", f"com.fbxfindreplace.{name}"])
+
     for src, dest in binaries:
         args.extend(["--add-binary", f"{src}{os.pathsep}{dest}"])
     for src, dest in datas:
@@ -124,6 +145,15 @@ def build(name: str, script: str, binaries, datas) -> None:
 
     print("\nRunning:", " ".join(args))
     PyInstaller.__main__.run(args)
+
+
+def _tkinter_available() -> bool:
+    try:
+        import tkinter  # noqa: F401
+
+        return True
+    except Exception:
+        return False
 
 
 def main():
@@ -136,8 +166,19 @@ def main():
         build_cli = args.cli
         build_gui = args.gui
     else:
+        # Default: CLI always; GUI only when tkinter works (often missing on macOS CI / minimal Pythons).
         build_cli = True
-        build_gui = True
+        build_gui = _tkinter_available()
+        if not build_gui:
+            print("Skipping GUI build: tkinter is not available (use --gui to force).")
+
+    if build_gui and not _tkinter_available():
+        if args.gui:
+            sys.exit(
+                "Error: tkinter is required for a GUI build.\n"
+                "On macOS try the python.org installer (includes Tcl/Tk), or skip GUI with --cli."
+            )
+        build_gui = False
 
     try:
         import PyInstaller  # noqa: F401
@@ -159,11 +200,20 @@ def main():
         print(f"  {os.path.join(root, 'dist', 'fbx_find_replace' + ext)}")
     if build_gui:
         print(f"  {os.path.join(root, 'dist', 'fbx_find_replace_gui' + ext)}")
+
     if sys.platform.startswith("linux"):
         print(
             "\nOn the target Linux machine you may still need system libs, e.g.:\n"
             "  sudo apt install libxml2 zlib1g\n"
             "Make the binary executable: chmod +x dist/fbx_find_replace"
+        )
+    elif sys.platform == "darwin":
+        print(
+            "\nOn macOS after download/copy:\n"
+            "  chmod +x dist/fbx_find_replace\n"
+            "  xattr -dr com.apple.quarantine dist/fbx_find_replace\n"
+            "Apple Silicon vs Intel: build on the same CPU architecture you target\n"
+            "(or produce separate arm64 / x86_64 builds). libxml2 is usually present."
         )
 
 

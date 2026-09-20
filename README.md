@@ -2,7 +2,8 @@
 
 Find and replace text in FBX node names, then save to a new file.
 
-Works on **Windows**, **Linux**, and **macOS** (Python 3.10+).
+Works on **Windows**, **Linux**, and **macOS** (Python 3.10+; Autodesk’s current
+FBX Python wheels are often **3.11** — match the wheel’s `cp3xx` tag).
 
 ## Requirements
 
@@ -14,11 +15,14 @@ Download the **FBX Python SDK** package for your platform, then install the
 included wheel, for example:
 
 ```bash
-# Linux (example; use the wheel name from your download)
-pip install ./fbx-*-cp310-*-manylinux*.whl
+# Linux
+pip install ./fbx-*-cp311-*-manylinux*.whl
 
-# Windows (example)
-pip install .\fbx-*-cp310-*-win_amd64.whl
+# macOS
+pip install ./fbx-*-cp311-*-macosx*.whl
+
+# Windows
+pip install .\fbx-*-cp311-*-win_amd64.whl
 ```
 
 Verify:
@@ -27,10 +31,17 @@ Verify:
 python -c "import fbx; print('ok')"
 ```
 
-On Linux you may also need system libraries used by the SDK:
+System libraries (CLI):
 
 ```bash
-sudo apt install libxml2 zlib1g   # Debian/Ubuntu
+# Debian/Ubuntu
+sudo apt install libxml2 zlib1g
+
+# Fedora
+sudo dnf install libxml2 zlib
+
+# macOS — usually already present; if import fails:
+brew install libxml2
 ```
 
 ## Install this project
@@ -109,33 +120,65 @@ Requires Tk (`python3-tk` on Debian/Ubuntu).
 
 ## Portable binary (like a Windows .exe)
 
-PyInstaller cannot cross-compile: build the Linux binary **on Linux** (or WSL),
-and the Windows `.exe` on Windows. The FBX SDK for that OS must already be
-importable (`python -c "import fbx"`).
+PyInstaller **cannot cross-compile**. Build on the same OS (and CPU arch) you
+target:
+
+| Build machine | Output |
+|---------------|--------|
+| Windows       | `dist/fbx_find_replace.exe` |
+| Linux         | `dist/fbx_find_replace` |
+| macOS         | `dist/fbx_find_replace` |
+
+The FBX SDK for that OS must already be importable (`python -c "import fbx"`).
 
 ```bash
 pip install pyinstaller
-python build_portable.py          # CLI + GUI → dist/
-python build_portable.py --cli    # only fbx_find_replace
-python build_portable.py --gui    # only fbx_find_replace_gui
+python build_portable.py --cli    # recommended (CLI only)
+python build_portable.py          # CLI; GUI only if tkinter works
+python build_portable.py --gui    # GUI only (optional)
 ```
 
-| Platform | Output |
-|----------|--------|
-| Windows  | `dist/fbx_find_replace.exe`, `dist/fbx_find_replace_gui.exe` |
-| Linux    | `dist/fbx_find_replace`, `dist/fbx_find_replace_gui` |
-
-On Linux, make it executable and run:
+### Linux
 
 ```bash
 chmod +x dist/fbx_find_replace
 ./dist/fbx_find_replace input.fbx output.fbx Armature Skeleton
 ```
 
-The binary is self-contained (Python + script + FBX extension), but may still
-need common system libs such as `libxml2` / `zlib`.
+May still need `libxml2` / `zlib`. A binary built on Ubuntu 22.04 (glibc 2.35)
+usually runs on Fedora with equal or newer glibc.
 
-**Windows alternative (py2exe, CLI only):**
+### No Mac? Build with GitHub Actions
+
+You do not need a Mac. A hosted `macos-14` runner builds the CLI binary using
+the private SDK repo [`alexantoshuk/mac_fbx_sdk`](https://github.com/alexantoshuk/mac_fbx_sdk).
+
+1. Download **FBX Python SDK for macOS** from Autodesk (on Windows is fine).
+2. Upload it to a release on the private repo (tag `fbx-sdk`):
+
+```bash
+gh release create fbx-sdk ./path/to/fbx*_macos* \
+  --repo alexantoshuk/mac_fbx_sdk \
+  --title "FBX Python SDK macOS" \
+  --notes "CI only"
+```
+
+3. In `fbx_find_replace`: secret `MAC_FBX_SDK_TOKEN` = GitHub PAT with read
+   access to `mac_fbx_sdk` (already set if you used the setup helper).
+4. **Actions → Build macOS portable → Run workflow**
+5. Download artifact `fbx_find_replace-macos-arm64`
+   (optionally enable Intel for `…-x86_64`).
+
+On the Mac that will run it:
+
+```bash
+chmod +x fbx_find_replace
+xattr -dr com.apple.quarantine fbx_find_replace
+./fbx_find_replace input.fbx output.fbx Armature Skeleton
+```
+
+
+### Windows alternative (py2exe, CLI only)
 
 ```bash
 pip install py2exe
