@@ -79,19 +79,20 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "${{ steps.fbx.outputs.wheel }}" pyinstaller
           python -c "import fbx; print('fbx ok', fbx.__file__)"
+          python -c "import tkinter; print('tkinter ok')"
 
-      - name: Build portable CLI
+      - name: Build portable CLI + GUI
         run: |
           set -euo pipefail
-          python build_portable.py --cli
-          chmod +x dist/fbx_find_replace
-          file dist/fbx_find_replace
-          ./dist/fbx_find_replace --help | head -n 8
+          python build_portable.py --cli --gui
+          chmod +x dist/Darwin/fbx_find_replace dist/Darwin/fbx_find_replace_gui
+          file dist/Darwin/fbx_find_replace dist/Darwin/fbx_find_replace_gui
+          ./dist/Darwin/fbx_find_replace --help | head -n 8
 
       - uses: actions/upload-artifact@v4
         with:
           name: fbx_find_replace-macos-arm64
-          path: dist/fbx_find_replace
+          path: dist/Darwin/
           if-no-files-found: error
 
   build-x86_64:
@@ -145,17 +146,18 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "${{ steps.fbx.outputs.wheel }}" pyinstaller
           python -c "import fbx; print('fbx ok', fbx.__file__)"
+          python -c "import tkinter; print('tkinter ok')"
 
-      - name: Build portable CLI
+      - name: Build portable CLI + GUI
         run: |
           set -euo pipefail
-          python build_portable.py --cli
-          chmod +x dist/fbx_find_replace
-          file dist/fbx_find_replace
-          ./dist/fbx_find_replace --help | head -n 8
+          python build_portable.py --cli --gui
+          chmod +x dist/Darwin/fbx_find_replace dist/Darwin/fbx_find_replace_gui
+          file dist/Darwin/fbx_find_replace dist/Darwin/fbx_find_replace_gui
+          ./dist/Darwin/fbx_find_replace --help | head -n 8
 
       - uses: actions/upload-artifact@v4
         with:
           name: fbx_find_replace-macos-x86_64
-          path: dist/fbx_find_replace
+          path: dist/Darwin/
           if-no-files-found: error

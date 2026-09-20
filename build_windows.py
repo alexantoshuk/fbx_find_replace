@@ -3,6 +3,9 @@ Windows-only: build a standalone console exe with py2exe.
 
   py -3.10 -m pip install py2exe
   py -3.10 build_windows.py
+
+Output:
+  dist/Windows/fbx_find_replace.exe
 """
 
 import glob
@@ -43,9 +46,13 @@ fbx_candidates = [p for p in fbx_candidates if not (p in seen or seen.add(p))]
 if fbx_candidates:
     data_files.append((".", fbx_candidates))
 
+dist_dir = os.path.join("dist", "Windows")
+os.makedirs(dist_dir, exist_ok=True)
+
 py2exe.freeze(
     console=[{"script": "fbx_find_replace.py", "dest_base": "fbx_find_replace"}],
     options={
+        "dist_dir": dist_dir,
         "bundle_files": 0,
         "compressed": True,
         "optimize": 2,
@@ -66,3 +73,5 @@ py2exe.freeze(
         "product_name": "fbx_find_replace",
     },
 )
+
+print(f"Done: {os.path.join(dist_dir, 'fbx_find_replace.exe')}")

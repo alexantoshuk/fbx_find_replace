@@ -11,9 +11,11 @@ Usage:
   python build_portable.py --cli    # CLI only (recommended on macOS)
   python build_portable.py --gui    # GUI only (requires tkinter)
 
-Outputs land in dist/:
-  dist/fbx_find_replace[.exe]
-  dist/fbx_find_replace_gui[.exe]   # optional
+Outputs (same names on every OS; Windows adds .exe):
+  dist/Windows/fbx_find_replace.exe
+  dist/Linux/fbx_find_replace
+  dist/Darwin/fbx_find_replace
+  (+ optional fbx_find_replace_gui[.exe])
 """
 
 from __future__ import annotations
@@ -24,6 +26,20 @@ import importlib.util
 import os
 import site
 import sys
+
+
+def platform_dir_name() -> str:
+    if sys.platform == "win32":
+        return "Windows"
+    if sys.platform == "darwin":
+        return "Darwin"
+    if sys.platform.startswith("linux"):
+        return "Linux"
+    return sys.platform
+
+
+def binary_ext() -> str:
+    return ".exe" if sys.platform == "win32" else ""
 
 
 def _site_dirs():
@@ -119,9 +135,12 @@ def collect_fbx_artifacts():
     return binaries, datas
 
 
-def build(name: str, script: str, binaries, datas) -> None:
+def build(name: str, script: str, binaries, datas, dist_dir: str, work_dir: str) -> None:
     # Import here so --help works without PyInstaller installed.
     import PyInstaller.__main__
+
+    os.makedirs(dist_dir, exist_ok=True)
+    os.makedirs(work_dir, exist_ok=True)
 
     args = [
         "--noconfirm",
@@ -130,6 +149,12 @@ def build(name: str, script: str, binaries, datas) -> None:
         "--console",
         "--name",
         name,
+        "--distpath",
+        dist_dir,
+        "--workpath",
+        work_dir,
+        "--specpath",
+        work_dir,
         "--hidden-import",
         "fbx",
     ]
@@ -189,29 +214,40 @@ def main():
     root = os.path.dirname(os.path.abspath(__file__))
     os.chdir(root)
 
-    if build_cli:
-        build("fbx_find_replace", "fbx_find_replace.py", binaries, datas)
-    if build_gui:
-        build("fbx_find_replace_gui", "fbx_find_replace_gui.py", binaries, datas)
+    plat = platform_dir_name()
+    dist_dir = os.path.join(root, "dist", plat)
+    work_dir = os.path.join(root, "build", plat)
+    ext = binary_ext()
 
-    ext = ".exe" if sys.platform == "win32" else ""
-    print("\nDone. Portable binaries:")
     if build_cli:
-        print(f"  {os.path.join(root, 'dist', 'fbx_find_replace' + ext)}")
+        build("fbx_find_replace", "fbx_find_replace.py", binaries, datas, dist_dir, work_dir)
     if build_gui:
-        print(f"  {os.path.join(root, 'dist', 'fbx_find_replace_gui' + ext)}")
+        build(
+            "fbx_find_replace_gui",
+            "fbx_find_replace_gui.py",
+            binaries,
+            datas,
+            dist_dir,
+            work_dir,
+        )
+
+    print(f"\nDone. Portable binaries ({plat}):")
+    if build_cli:
+        print(f"  {os.path.join(dist_dir, 'fbx_find_replace' + ext)}")
+    if build_gui:
+        print(f"  {os.path.join(dist_dir, 'fbx_find_replace_gui' + ext)}")
 
     if sys.platform.startswith("linux"):
         print(
             "\nOn the target Linux machine you may still need system libs, e.g.:\n"
             "  sudo apt install libxml2 zlib1g\n"
-            "Make the binary executable: chmod +x dist/fbx_find_replace"
+            "Make the binary executable: chmod +x dist/Linux/fbx_find_replace"
         )
     elif sys.platform == "darwin":
         print(
             "\nOn macOS after download/copy:\n"
-            "  chmod +x dist/fbx_find_replace\n"
-            "  xattr -dr com.apple.quarantine dist/fbx_find_replace\n"
+            "  chmod +x dist/Darwin/fbx_find_replace\n"
+            "  xattr -dr com.apple.quarantine dist/Darwin/fbx_find_replace\n"
             "Apple Silicon vs Intel: build on the same CPU architecture you target\n"
             "(or produce separate arm64 / x86_64 builds). libxml2 is usually present."
         )

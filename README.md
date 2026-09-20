@@ -121,13 +121,15 @@ Requires Tk (`python3-tk` on Debian/Ubuntu).
 ## Portable binary (like a Windows .exe)
 
 PyInstaller **cannot cross-compile**. Build on the same OS (and CPU arch) you
-target:
+target. Binaries land in a per-OS folder with the **same names**:
 
 | Build machine | Output |
 |---------------|--------|
-| Windows       | `dist/fbx_find_replace.exe` |
-| Linux         | `dist/fbx_find_replace` |
-| macOS         | `dist/fbx_find_replace` |
+| Windows       | `dist/Windows/fbx_find_replace.exe` |
+| Linux         | `dist/Linux/fbx_find_replace` |
+| macOS         | `dist/Darwin/fbx_find_replace` |
+
+(Optional GUI: `fbx_find_replace_gui` / `.exe` in the same folder.)
 
 The FBX SDK for that OS must already be importable (`python -c "import fbx"`).
 
@@ -141,8 +143,8 @@ python build_portable.py --gui    # GUI only (optional)
 ### Linux
 
 ```bash
-chmod +x dist/fbx_find_replace
-./dist/fbx_find_replace input.fbx output.fbx Armature Skeleton
+chmod +x dist/Linux/fbx_find_replace
+./dist/Linux/fbx_find_replace input.fbx output.fbx Armature Skeleton
 ```
 
 May still need `libxml2` / `zlib`. A binary built on Ubuntu 22.04 (glibc 2.35)
