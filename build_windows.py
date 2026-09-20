@@ -69,7 +69,7 @@ py2exe.freeze(
     zipfile=None,
     data_files=data_files,
     version_info={
-        "version": "1.1.0",
+        "version": "1.2.0",
         "product_name": "fbx_find_replace",
     },
 )
